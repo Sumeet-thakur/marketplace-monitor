@@ -1,0 +1,205 @@
+// Marketplace Monitoring Platform — Prisma schema
+// NOTE: SQLite is used for the local MVP so the project runs with zero
+// external infra. To switch to Postgres for production:
+//   1. Set `provider = "postgresql"` below
+//   2. Set DATABASE_URL to a postgres connection string in .env
+//   3. Run `npx prisma migrate dev`
+// The schema itself is portable as-is.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Admin user (simple single/multi-admin auth for the demo)
+// ---------------------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Integration = one configured marketplace/data source
+// ---------------------------------------------------------------------------
+model Integration {
+  id             String   @id @default(cuid())
+  provider       String // "demo" | "meta" | "pakwheels" | "generic"
+  displayName    String
+  enabled        Boolean  @default(false)
+  demo           Boolean  @default(false)
+
+  // Non-secret configuration (safe to return to the frontend as-is)
+  baseUrl        String?
+  endpoint       String?
+  apiVersion     String?
+  requestIntervalSec Int  @default(60)
+  minIntervalSec Int      @default(15) // provider-enforced safety floor
+  httpMethod     String   @default("GET")
+  headersJson    String?  // JSON string of static (non-secret) headers
+  queryParamsJson String? // JSON string of static query params
+  paginationJson String?  // JSON string describing pagination strategy
+  fieldMappingJson String? // JSON string: normalized field -> response path
+  authMethod     String?  // "bearer" | "api_key_header" | "api_key_query" | "basic" | "none"
+
+  // Live status (updated by the sync engine / test-connection)
+  status         String   @default("not_configured") // not_configured|connected|disconnected|error|rate_limited
+  lastSuccessAt  DateTime?
+  lastFailureAt  DateTime?
+  lastErrorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  credential Credential?
+  listings   Listing[]
+  syncRuns   SyncRun[]
+  apiLogs    ApiLog[]
+
+  @@unique([provider, displayName])
+}
+
+// ---------------------------------------------------------------------------
+// Credential = encrypted secret material, 1:1 with an Integration
+// Never returned to the frontend in decrypted form.
+// ---------------------------------------------------------------------------
+model Credential {
+  id            String   @id @default(cuid())
+  integrationId String   @unique
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  // Each secret is stored as an encrypted blob (AES-256-GCM: iv:authTag:ciphertext, base64)
+  // Only the last 4 chars are additionally cached in plaintext for display masking.
+  apiKeyEnc      String?
+  apiKeyLast4    String?
+  apiSecretEnc   String?
+  apiSecretLast4 String?
+  accessTokenEnc String?
+  accessTokenLast4 String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Normalized listing model
+// ---------------------------------------------------------------------------
+model Listing {
+  id            String   @id @default(cuid())
+  source        String
+  externalId    String
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+  price       Float?
+  currency    String?
+  make        String?
+  model       String?
+  year        Int?
+  mileage     Int?
+  location    String?
+  sellerName  String?
+  sellerType  String?
+  imageUrl    String?
+  listingUrl  String?
+  postedAt    DateTime?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  status      String   @default("ACTIVE") // NEW | ACTIVE | UPDATED | REMOVED
+
+  rawData     String? // JSON string of the raw provider payload (for audit/debug)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events ListingEvent[]
+
+  @@unique([source, externalId])
+  @@index([source])
+  @@index([externalId])
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+  @@index([price])
+  @@index([make])
+  @@index([model])
+  @@index([year])
+}
+
+model ListingEvent {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  type      String   // FIRST_DETECTED | PRICE_CHANGED | DESCRIPTION_CHANGED | STATUS_CHANGED | UPDATED
+  message   String
+  fromValue String?
+  toValue   String?
+  createdAt DateTime @default(now())
+
+  @@index([listingId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// One row per poll cycle for an integration
+// ---------------------------------------------------------------------------
+model SyncRun {
+  id            String   @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  status      String   @default("running") // running|success|failed|rate_limited
+  itemsFetched Int     @default(0)
+  itemsNew     Int     @default(0)
+  itemsUpdated Int     @default(0)
+  errorMessage String?
+  durationMs   Int?
+
+  @@index([integrationId])
+  @@index([startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Structured, secret-redacted API log
+// ---------------------------------------------------------------------------
+model ApiLog {
+  id            String   @id @default(cuid())
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  level       String   // info|warn|error
+  category    String   // request|response|auth|rate_limit|parse|database|worker
+  message     String
+  httpStatus  Int?
+  responseTimeMs Int?
+  metaJson    String?  // JSON string, redacted of any secret fields
+  createdAt   DateTime @default(now())
+
+  @@index([integrationId])
+  @@index([createdAt])
+  @@index([level])
+}

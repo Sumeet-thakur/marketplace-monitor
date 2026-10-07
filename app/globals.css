@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+:root {
+  /* Surfaces */
+  --ink: #0a0e14;
+  --surface: #10151d;
+  --surface-2: #161d28;
+  --surface-3: #1c2430;
+  --border: #212a38;
+  --border-soft: #1a222e;
+
+  /* Text */
+  --text: #e7ecf3;
+  --text-muted: #8b96a8;
+  --text-dim: #5c6779;
+
+  /* Signal colors — status semantics used consistently across the app */
+  --signal-live: #35d48c; /* connected / new / success */
+  --signal-warn: #f2a93b; /* rate-limited / degraded */
+  --signal-error: #f0575b; /* error / disconnected */
+  --signal-info: #5b8def; /* primary actions, links */
+  --signal-neutral: #5c6779; /* not configured / disabled */
+
+  --font-display: -apple-system, "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-body: -apple-system, "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-dim: var(--text-dim);
+  --color-signal-live: var(--signal-live);
+  --color-signal-warn: var(--signal-warn);
+  --color-signal-error: var(--signal-error);
+  --color-signal-info: var(--signal-info);
+  --color-signal-neutral: var(--signal-neutral);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(91, 141, 239, 0.06), transparent 40%),
+    radial-gradient(circle at 85% 10%, rgba(53, 212, 140, 0.05), transparent 35%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(91, 141, 239, 0.35);
+}
+
+/* Signature: a slow radar-style pulse for live/connected status dots */
+@keyframes signal-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(53, 212, 140, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(53, 212, 140, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(53, 212, 140, 0);
+  }
+}
+
+.pulse-dot {
+  animation: signal-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.25s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .toast-enter {
+    animation: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal-info);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbars to match the ops-console feel */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+}
